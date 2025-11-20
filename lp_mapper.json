@@ -1,0 +1,26 @@
+{
+  "test_1": [
+    {
+      "env": "dev",
+      "appServerIP": "10.0.3.82",
+      "dbServerIP": "10.0.3.82",
+      "dbName": "devops",
+      "wildflyDir": "/home/ec2-user/servers/wildfly-10.1.0.Final_sow1/standalone/deployments",
+      "stopScript": "/home/ec2-user/devops_sow1_stop.sh",
+      "startScript": "/home/ec2-user/devops_sow1_start.sh",
+      "overlaySrc": "${WORKSPACE}/lp-custom-configs/devops/dev"
+    }
+  ],
+  "test_2": [
+    {
+      "env": "dev",
+      "appServerIP": "10.0.3.130",
+      "dbServerIP": "10.0.3.130",
+      "dbName": "devops",
+      "wildflyDir": "/home/ec2-user/servers/wildfly-10.1.0.Final_sow1/standalone/deployments",
+      "stopScript": "/home/ec2-user/devops_sow1_stop.sh",
+      "startScript": "/home/ec2-user/devops_sow1_start.sh",
+      "overlaySrc": "${WORKSPACE}/lp-custom-configs/devops/dev"
+    }
+  ]
+}

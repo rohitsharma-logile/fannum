@@ -38,16 +38,14 @@ stop_app() {
     local TIMESTAMP=`date +%Y%M%d-%H%M%S`
 
     if [[ "$PRODUCT_MODULE" == "lp" ]]; then
-        local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}' | head -1`
-        sudo kill -9 $PID
+        local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}'`
         cp gc-sow1.log gc-sow1-${TIMESTAMP}.log
         jstack -F $PID > jenkins-jstack-sow1-${TIMESTAMP}.log
         jmap -histo $PID > jmap-sow1-${TIMESTAMP}.log
 
         zip -r j-logs.zip gc-sow1-${TIMESTAMP}.log jenkins-jstack-sow1-${TIMESTAMP}.log jmap-sow1-${TIMESTAMP}.log
     else
-        local PID=`ps -eaf | grep java | grep sow2 | awk '{print $2}' | head -1`
-        sudo kill -9 $PID
+        local PID=`ps -eaf | grep java | grep sow2 | awk '{print $2}'`
         cp gc-sow2.log gc-sow2-${TIMESTAMP}.log
         jstack -F $PID > jenkins-jstack-sow2-${TIMESTAMP}.log
         jmap -histo $PID > jmap-sow2-${TIMESTAMP}.log

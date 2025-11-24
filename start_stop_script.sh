@@ -35,14 +35,41 @@ get_status() {
 }
 
 stop_app() {
+    local TIMESTAMP=`date +%Y%M%d-%H%M%S`
+    local PID=`ps -eaf | grep java | grep "$DEPLOYMENT_DIR" | awk '{print $2}' | head -1`
+
+    if [[ "$PID" == "" ]]; then
+        echo DEPLOY_STATUS:ERROR
+        exit 1
+    fi
+
+    if [[ "$PRODUCT_MODULE" == "lp" ]]; then
+        cp gc-sow1.log gc-sow1-${TIMESTAMP}.log
+        jstack -F $PID > jenkins-jstack-sow1-${TIMESTAMP}.log
+        jmap -histo $PID > jmap-sow1-${TIMESTAMP}.log
+
+        zip -r j-logs.zip gc-sow1-${TIMESTAMP}.log jenkins-jstack-sow1-${TIMESTAMP}.log jmap-sow1-${TIMESTAMP}.log
+    else
+        cp gc-sow2.log gc-sow2-${TIMESTAMP}.log
+        jstack -F $PID > jenkins-jstack-sow2-${TIMESTAMP}.log
+        jmap -histo $PID > jmap-sow2-${TIMESTAMP}.log
+
+        zip -r j-logs.zip gc-sow2-${TIMESTAMP}.log jenkins-jstack-sow2-${TIMESTAMP}.log jmap-sow2-${TIMESTAMP}.log
+    fi
+
     sudo bash -c "$SCRIPT_PATH" || true
 
     STATUS=$(get_status)
     if [[ "$STATUS" == "503" || "$STATUS" == "000" ]]; then
         echo DEPLOY_STATUS:SUCCESS
     else
-        echo DEPLOY_STATUS:STOP_FAILED
+        echo DEPLOY_STATUS:ERROR
     fi
+    # Delete if zip is greater than 22MB
+    [ $(du -k j-logs.zip | cut -f1) -gt $((22 * 1024)) ] && {
+        rm j-logs.zip
+        echo "ZIP_STATUS:DELETED"
+    }
 }
 
 start_app() {

@@ -36,6 +36,7 @@ get_status() {
 
 stop_app() {
     local TIMESTAMP=`date +%Y%m%d-%H%M%S`
+    rm -rf j-logs.zip
 
     if [[ "$PRODUCT_MODULE" == "elm" ]]; then
         local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}'`

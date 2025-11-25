@@ -35,9 +35,9 @@ get_status() {
 }
 
 stop_app() {
-    local TIMESTAMP=`date +%Y%M%d-%H%M%S`
+    local TIMESTAMP=`date +%Y%m%d-%H%M%S`
 
-    if [[ "$PRODUCT_MODULE" == "lp" ]]; then
+    if [[ "$PRODUCT_MODULE" == "elm" ]]; then
         local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}'`
         echo ps -eaf | grep java | grep sow1
         cp gc-sow1.log gc-sow1-${TIMESTAMP}.log

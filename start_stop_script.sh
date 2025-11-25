@@ -36,7 +36,7 @@ get_status() {
 
 stop_app() {
     local TIMESTAMP=`date +%Y%m%d-%H%M%S`
-    rm -rf j-logs.zip
+    rm -rf /home/ec2-user/j-logs.zip
 
     if [[ "$PRODUCT_MODULE" == "elm" ]]; then
         local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}'`
@@ -45,14 +45,14 @@ stop_app() {
         sudo jstack -F $PID > jenkins-jstack-sow1-${TIMESTAMP}.log
         sudo jmap -histo $PID > jmap-sow1-${TIMESTAMP}.log
 
-        zip -r j-logs.zip gc-sow1-${TIMESTAMP}.log jenkins-jstack-sow1-${TIMESTAMP}.log jmap-sow1-${TIMESTAMP}.log
+        zip j-logs.zip gc-sow1-${TIMESTAMP}.log jenkins-jstack-sow1-${TIMESTAMP}.log jmap-sow1-${TIMESTAMP}.log
     else
         local PID=`ps -eaf | grep java | grep sow2 | awk '{print $2}'`
         cp gc-sow2.log gc-sow2-${TIMESTAMP}.log
         sudo jstack -F $PID > jenkins-jstack-sow2-${TIMESTAMP}.log
         sudo jmap -histo $PID > jmap-sow2-${TIMESTAMP}.log
 
-        zip -r j-logs.zip gc-sow2-${TIMESTAMP}.log jenkins-jstack-sow2-${TIMESTAMP}.log jmap-sow2-${TIMESTAMP}.log
+        zip j-logs.zip gc-sow2-${TIMESTAMP}.log jenkins-jstack-sow2-${TIMESTAMP}.log jmap-sow2-${TIMESTAMP}.log
     fi
 
     sudo bash -c "$SCRIPT_PATH" || true

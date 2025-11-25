@@ -39,6 +39,7 @@ stop_app() {
 
     if [[ "$PRODUCT_MODULE" == "lp" ]]; then
         local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}'`
+        echo ps -eaf | grep java | grep sow1
         cp gc-sow1.log gc-sow1-${TIMESTAMP}.log
         sudo jstack -F $PID > jenkins-jstack-sow1-${TIMESTAMP}.log
         sudo jmap -histo $PID > jmap-sow1-${TIMESTAMP}.log

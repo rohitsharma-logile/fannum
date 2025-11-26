@@ -1,113 +1,125 @@
 #!/bin/bash
 
+set -u
+
 APP_SERVER_IP="$1"
-DEPLOYMENT_DIR="$(echo $2 | base64 -d)"
-SCRIPT_PATH="$3"
-PRODUCT_MODULE="$4"
-ACTION="$5"
-MAX_SLEEP_TIME="${6:-480}"
-INTERVAL="${7:-5}"
+DEPLOYMENT_DIR="$(echo "$2" | base64 -d)"
+START_SCRIPT_PATH="$3"
+STOP_SCRIPT_PATH="$4"
+PRODUCT_MODULE_INPUT="$5"
+ACTION="$6"
+MAX_SLEEP_TIME="${7:-480}"
+INTERVAL="${8:-5}"
 
-APP_SERVER_PORT=0
-
-case "$PRODUCT_MODULE" in
-    LP)  PRODUCT_MODULE="elm" ;;
-    WFM) PRODUCT_MODULE="portal" ;;
-    *)   echo "Invalid module"; exit 1 ;;
+case "$PRODUCT_MODULE_INPUT" in
+    LP)  
+        PRODUCT_MODULE="elm"
+        APP_SERVER_PORT=9080
+        SERVER_ID="sow1"
+        ;;
+    WFM) 
+        PRODUCT_MODULE="portal" 
+        APP_SERVER_PORT=9081
+        SERVER_ID="sow2"
+        ;;
+    *)   echo "Invalid module: $PRODUCT_MODULE_INPUT"; exit 1 ;;
 esac
 
-[[ ! -d "$DEPLOYMENT_DIR" ]] && echo "Invalid deployment dir" && exit 1
-[[ ! -f "$SCRIPT_PATH" ]] && echo "Invalid script path" && exit 1
-
-[[ "$PRODUCT_MODULE" == "elm" ]] && APP_SERVER_PORT=9080 || APP_SERVER_PORT=9081
-
-case "$ACTION" in
-    START|STOP) ;;
-    *) echo "Invalid action"; exit 1 ;;
-esac
+# Validations
+[[ ! -d "$DEPLOYMENT_DIR" ]] && echo "Error: Invalid deployment dir: $DEPLOYMENT_DIR" && exit 1
+[[ ! -f "$START_SCRIPT_PATH" ]] && echo "Error: Invalid script path: $SCRIPT_PATH" && exit 1
+[[ ! -f "$STOP_SCRIPT_PATH" ]] && echo "Error: Invalid script path: $SCRIPT_PATH" && exit 1
 
 ERR_FILE="${DEPLOYMENT_DIR}/elm.ear.failed"
 DEPLOYED_FILE="${DEPLOYMENT_DIR}/elm.ear.deployed"
-IS_DEPLOYING_FILE="${DEPLOYMENT_DIR}/elm.ear.isdeploying"
 
 get_status() {
-    curl -s -o /dev/null -w "%{http_code}" "http://$APP_SERVER_IP:$APP_SERVER_PORT/$PRODUCT_MODULE"
+    echo $(curl -s -o /dev/null -w "%{http_code}" "http://$APP_SERVER_IP:$APP_SERVER_PORT/${PRODUCT_MODULE,,}")
+}
+
+collect_diagnostics() {
+    local TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    local ZIP_NAME="j-logs.zip"
+
+    rm -f "$ZIP_NAME"
+
+    local PID=$(pgrep -f "java.*${SERVER_ID}" | head -1)
+
+    if [[ -z "$PID" ]]; then
+        echo "PID not found for $SERVER_ID, skipping diagnostics."
+        return
+    fi
+
+    cp "gc-${SERVER_ID}.log" "gc-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
+    sudo jstack -F "$PID" > "jenkins-jstack-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
+    sudo jmap -histo "$PID" > "jmap-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
+
+    zip "$ZIP_NAME" "gc-${SERVER_ID}-${TIMESTAMP}.log" \
+                    "jenkins-jstack-${SERVER_ID}-${TIMESTAMP}.log" \
+                    "jmap-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
+
+    if [[ -f "$ZIP_NAME" ]]; then
+        local SIZE=$(stat -c%s "$ZIP_NAME" 2>/dev/null || stat -f%z "$ZIP_NAME")
+        
+        if (( SIZE > 22528 )); then
+             rm "$ZIP_NAME"
+             echo "ZIP_STATUS:DELETED (Size: $SIZE bytes)"
+        fi
+    fi
 }
 
 stop_app() {
-    local TIMESTAMP=`date +%Y%m%d-%H%M%S`
-    rm -rf /home/ec2-user/j-logs.zip
-
-    if [[ "$PRODUCT_MODULE" == "elm" ]]; then
-        local PID=`ps -eaf | grep java | grep sow1 | awk '{print $2}'`
-        echo ps -eaf | grep java | grep sow1
-        cp gc-sow1.log gc-sow1-${TIMESTAMP}.log
-        sudo jstack -F $PID > jenkins-jstack-sow1-${TIMESTAMP}.log
-        sudo jmap -histo $PID > jmap-sow1-${TIMESTAMP}.log
-
-        zip j-logs.zip gc-sow1-${TIMESTAMP}.log jenkins-jstack-sow1-${TIMESTAMP}.log jmap-sow1-${TIMESTAMP}.log
-    else
-        local PID=`ps -eaf | grep java | grep sow2 | awk '{print $2}'`
-        cp gc-sow2.log gc-sow2-${TIMESTAMP}.log
-        sudo jstack -F $PID > jenkins-jstack-sow2-${TIMESTAMP}.log
-        sudo jmap -histo $PID > jmap-sow2-${TIMESTAMP}.log
-
-        zip j-logs.zip gc-sow2-${TIMESTAMP}.log jenkins-jstack-sow2-${TIMESTAMP}.log jmap-sow2-${TIMESTAMP}.log
+    if [[ "$ACTION" == "STOP" ]]; then
+        collect_diagnostics
     fi
 
-    sudo bash -c "$SCRIPT_PATH" || true
+    sudo bash -c "$STOP_SCRIPT_PATH" || true
 
-    STATUS=$(get_status)
-    if [[ "$STATUS" == "503" || "$STATUS" == "000" ]]; then
-        echo DEPLOY_STATUS:SUCCESS
-    else
-        echo DEPLOY_STATUS:ERROR
+    if [[ "$ACTION" == "STOP" ]]; then
+        local STATUS=$(get_status)
+        if [[ "$STATUS" == "503" || "$STATUS" == "000" ]]; then
+            echo "DEPLOY_STATUS:SUCCESS"
+        else
+            echo "DEPLOY_STATUS:ERROR (Status: $STATUS)"
+        fi
     fi
-    # Delete if zip is greater than 22MB
-    [ $(du -k j-logs.zip | cut -f1) -gt $((22 * 1024)) ] && {
-        rm j-logs.zip
-        echo "ZIP_STATUS:DELETED"
-    }
 }
 
 start_app() {
-    # App already running → stop first
+    # If currently running, stop it first
     if [[ "$(get_status)" == "302" ]]; then
-        stop_app || exit 1
+        stop_app
+        sleep 5
     fi
+    
+    sleep 5
 
-    sleep 10
+    sudo bash -c "$START_SCRIPT_PATH" || { echo "DEPLOY_STATUS:START_FAILED"; exit 1; }
+    
+    sleep 5
+    
+    local elapsed=0
 
-    sudo "$SCRIPT_PATH" || { echo DEPLOY_STATUS:START_FAILED; exit 1; }
-
-    elapsed=0
     while (( elapsed < MAX_SLEEP_TIME )); do
-
         if [[ -f "$ERR_FILE" ]]; then
-            echo DEPLOY_STATUS:ERROR
+            echo "Build failed: Found $ERR_FILE"
+            echo "DEPLOY_STATUS:ERROR"
             exit 1
-
         elif [[ -f "$DEPLOYED_FILE" ]] && [[ "$(get_status)" == "302" ]]; then
-            echo DEPLOY_STATUS:SUCCESS
+            echo "DEPLOY_STATUS:SUCCESS"
             exit 0
-
         else
-            # wait and increment always — allow deployment system to create files
             sleep "$INTERVAL"
             (( elapsed += INTERVAL ))
         fi
     done
 
-    echo DEPLOY_STATUS:TIMEOUT
+    echo "DEPLOY_STATUS:TIMEOUT"
     exit 1
 }
 
-if [[ "$ACTION" == "START" ]]; then
-    start_app
-    exit 0
-fi
-
-if [[ "$ACTION" == "STOP" ]]; then
-    stop_app
-    exit 0
-fi
+case "$ACTION" in
+    START) start_app ;;
+    STOP)  stop_app ;;
+    *)     echo "Invalid action: $ACTION"; exit 1 ;;
+esac

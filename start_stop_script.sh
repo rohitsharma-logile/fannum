@@ -11,8 +11,8 @@ INTERVAL="${7:-5}"
 APP_SERVER_PORT=0
 
 case "$PRODUCT_MODULE" in
-    lp)  PRODUCT_MODULE="elm" ;;
-    wfm) PRODUCT_MODULE="portal" ;;
+    LP)  PRODUCT_MODULE="elm" ;;
+    WFM) PRODUCT_MODULE="portal" ;;
     *)   echo "Invalid module"; exit 1 ;;
 esac
 
@@ -22,7 +22,7 @@ esac
 [[ "$PRODUCT_MODULE" == "elm" ]] && APP_SERVER_PORT=9080 || APP_SERVER_PORT=9081
 
 case "$ACTION" in
-    start|stop) ;;
+    START|STOP) ;;
     *) echo "Invalid action"; exit 1 ;;
 esac
 
@@ -102,12 +102,12 @@ start_app() {
     exit 1
 }
 
-if [[ "$ACTION" == "start" ]]; then
+if [[ "$ACTION" == "START" ]]; then
     start_app
     exit 0
 fi
 
-if [[ "$ACTION" == "stop" ]]; then
+if [[ "$ACTION" == "STOP" ]]; then
     stop_app
     exit 0
 fi

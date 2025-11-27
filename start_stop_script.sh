@@ -25,7 +25,6 @@ case "$PRODUCT_MODULE_INPUT" in
     *)   echo "Invalid module: $PRODUCT_MODULE_INPUT"; exit 1 ;;
 esac
 
-# Validations
 [[ ! -d "$DEPLOYMENT_DIR" ]] && echo "Error: Invalid deployment dir: $DEPLOYMENT_DIR" && exit 1
 [[ ! -f "$START_SCRIPT_PATH" ]] && echo "Error: Invalid script path: $SCRIPT_PATH" && exit 1
 [[ ! -f "$STOP_SCRIPT_PATH" ]] && echo "Error: Invalid script path: $SCRIPT_PATH" && exit 1
@@ -37,9 +36,22 @@ get_status() {
     echo $(curl -s -o /dev/null -w "%{http_code}" "http://$APP_SERVER_IP:$APP_SERVER_PORT/${PRODUCT_MODULE,,}")
 }
 
+get_cpu_usage() {
+    local cpu=$(top -bn1 | awk -F'[, ]+' '/Cpu\(s\)/ {print $2+$4}')
+    cpu=${cpu%.*}
+    echo "$cpu"
+}
+
 collect_diagnostics() {
+    local CPU_USAGE=$(get_cpu_usage)
+    if [[ $CPU_USAGE > 80 ]]; then
+        echo "CPU Usage is above threshold of 80: $CPU_USAGE. Skipping log creation."
+        echo "ZIP_STATUS:SKIPPED"
+        return
+    fi
+    
     local TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-    local ZIP_NAME="j-logs.zip"
+    local ZIP_NAME="j-logs-${TIMESTAMP}.zip"
 
     rm -f "$ZIP_NAME"
 
@@ -50,20 +62,24 @@ collect_diagnostics() {
         return
     fi
 
+    echo "Creating log files"
     cp "gc-${SERVER_ID}.log" "gc-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
     sudo jstack -F "$PID" > "jenkins-jstack-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
     sudo jmap -histo "$PID" > "jmap-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
 
+    echo "Zipping log files"
     zip "$ZIP_NAME" "gc-${SERVER_ID}-${TIMESTAMP}.log" \
                     "jenkins-jstack-${SERVER_ID}-${TIMESTAMP}.log" \
                     "jmap-${SERVER_ID}-${TIMESTAMP}.log" 2>/dev/null || true
 
     if [[ -f "$ZIP_NAME" ]]; then
         local SIZE=$(stat -c%s "$ZIP_NAME" 2>/dev/null || stat -f%z "$ZIP_NAME")
+        echo "Total size of final zip: $SIZE Bytes"
         
-        if (( SIZE > 22528 )); then
+        if (( SIZE > 23068672 )); then
              rm "$ZIP_NAME"
-             echo "ZIP_STATUS:DELETED (Size: $SIZE bytes)"
+             echo "Deleting zip because it exceeds threshold of 23068672 Bytes: $SIZE Bytes"
+             echo "ZIP_STATUS:DELETED"
         fi
     fi
 }
@@ -88,21 +104,24 @@ stop_app() {
 start_app() {
     # If currently running, stop it first
     if [[ "$(get_status)" == "302" ]]; then
+        echo "App is already running. Killing it first."
         stop_app
+        echo "Sleeping for 5 seconds"
         sleep 5
     fi
-    
-    sleep 5
 
+    echo "Executing start script at $START_SCRIPT_PATH"
     sudo bash -c "$START_SCRIPT_PATH" || { echo "DEPLOY_STATUS:START_FAILED"; exit 1; }
-    
+
+    echo "Sleeping for 5 seconds"
     sleep 5
     
     local elapsed=0
 
+    echo "Checking for status in $DEPLOYMENT_DIR folder"
     while (( elapsed < MAX_SLEEP_TIME )); do
         if [[ -f "$ERR_FILE" ]]; then
-            echo "Build failed: Found $ERR_FILE"
+            echo "Build failed: Found $ERR_FILE that represents failure"
             echo "DEPLOY_STATUS:ERROR"
             exit 1
         elif [[ -f "$DEPLOYED_FILE" ]] && [[ "$(get_status)" == "302" ]]; then

@@ -51,7 +51,7 @@ collect_diagnostics() {
     fi
     
     local TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-    local ZIP_NAME="j-logs-${TIMESTAMP}.zip"
+    local ZIP_NAME="j-logs.zip"
 
     rm -f "$ZIP_NAME"
 
